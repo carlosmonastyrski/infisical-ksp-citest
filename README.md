@@ -97,14 +97,14 @@ Then reboot once: CNG caches its provider configuration and picks up the new pro
 The provider needs your Infisical server URL and Machine Identity credentials. The simplest setup is environment variables only, with no config file:
 
 ```powershell
-$env:INFISICAL_KSP_SERVER_URL = "https://app.infisical.com"
+$env:INFISICAL_SERVER_URL = "https://app.infisical.com"
 $env:INFISICAL_UNIVERSAL_AUTH_CLIENT_ID = "your-client-id"
 $env:INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET = "your-client-secret"
 ```
 
 `signtool` runs in its own process, so set these in the same session (or CI job) that runs it.
 
-Prefer a config file? Create `%ProgramData%\Infisical\config.json` (or point `INFISICAL_KSP_CONFIG` at a custom path) with at least `server_url`, and keep credentials in environment variables:
+Prefer a config file? Create `%ProgramData%\Infisical\config.json` (or point `INFISICAL_CONFIG` at a custom path) with at least `server_url`, and keep credentials in environment variables:
 
 ```json
 {
@@ -133,19 +133,21 @@ The provider is configured by environment variables and an optional JSON config 
 
 | Variable | Description |
 |----------|-------------|
-| `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` | Machine Identity client ID |
-| `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` | Machine Identity client secret |
-| `INFISICAL_KSP_CONFIG` | Path to config file (default: `%ProgramData%\Infisical\config.json`) |
-| `INFISICAL_KSP_SERVER_URL` | Override `server_url` from the config file |
+| `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` | Machine Identity client ID (Universal Auth) |
+| `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` | Machine Identity client secret (Universal Auth) |
+| `INFISICAL_TOKEN` | An Infisical access token (a user or machine identity JWT). Selects token auth; used instead of Universal Auth credentials |
+| `INFISICAL_CONFIG` | Path to config file (default: `%ProgramData%\Infisical\config.json`) |
+| `INFISICAL_SERVER_URL` | Override `server_url` from the config file |
 
 ### Config File
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `server_url` | Yes | (none) | Infisical server URL |
-| `auth.method` | No | `universal-auth` | Authentication method (only `universal-auth` is supported) |
-| `auth.client_id` | No | (none) | Machine Identity client ID (prefer env var) |
-| `auth.client_secret` | No | (none) | Machine Identity client secret (prefer env var) |
+| `auth.method` | No | `universal-auth` | Authentication method: `universal-auth` or `token` |
+| `auth.client_id` | No | (none) | Machine Identity client ID, for `universal-auth` (prefer env var) |
+| `auth.client_secret` | No | (none) | Machine Identity client secret, for `universal-auth` (prefer env var) |
+| `auth.token` | No | (none) | Infisical access token, for `token` auth (prefer the env var) |
 | `tls.ca_cert_path` | No | (none) | Custom CA certificate for self-hosted instances |
 | `tls.skip_verify` | No | `false` | Skip TLS verification (development only) |
 | `cache.token_ttl_seconds` | No | `300` | Auth token cache duration |
@@ -182,23 +184,24 @@ The provider is configured by environment variables and an optional JSON config 
 
 ### Authentication
 
-The provider uses **[Universal Auth](https://infisical.com/docs/documentation/platform/identities/universal-auth)** (Machine Identity) to authenticate with Infisical. Credentials can be provided two ways (in order of precedence):
+The provider supports two ways to authenticate with Infisical.
 
-1. **Environment variables** (recommended for CI/CD and production):
-   ```powershell
-   $env:INFISICAL_UNIVERSAL_AUTH_CLIENT_ID = "your-client-id"
-   $env:INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET = "your-client-secret"
-   ```
+**Universal Auth (Machine Identity)** is the default and best for long-lived, unattended setups (CI/CD). The provider exchanges the client ID/secret for an access token and refreshes it automatically. Provide the credentials via environment variables (recommended) or the config file:
 
-2. **Config file** (convenient for development):
-   ```json
-   {
-     "auth": {
-       "client_id": "your-client-id",
-       "client_secret": "your-client-secret"
-     }
-   }
-   ```
+```powershell
+$env:INFISICAL_UNIVERSAL_AUTH_CLIENT_ID = "your-client-id"
+$env:INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET = "your-client-secret"
+```
+
+**Token auth** uses an Infisical access token directly, either a user's token or a machine identity's. Setting `INFISICAL_TOKEN` selects it:
+
+```powershell
+$env:INFISICAL_TOKEN = "your-access-token"
+```
+
+> **Token auth is temporary.** Access tokens expire, and the provider does not refresh them (there are no long-lived credentials to refresh from). When the token expires, signing fails with `401` until you supply a new token. Use it for ad-hoc signing (for example, a user signing as themselves); use Universal Auth for anything unattended.
+
+Environment variables take precedence over the config file, and `INFISICAL_TOKEN` takes precedence over Universal Auth credentials.
 
 When credentials are available, the provider authenticates automatically the first time signtool opens it.
 

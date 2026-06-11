@@ -34,10 +34,11 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 func TestLoadConfigInvalid(t *testing.T) {
 	cases := map[string]string{
-		"missing server_url": `{}`,
-		"bad scheme":         `{"server_url":"ftp://example.com"}`,
-		"no host":            `{"server_url":"https://"}`,
-		"bad auth method":    `{"server_url":"https://app.infisical.com","auth":{"method":"oidc"}}`,
+		"missing server_url":  `{}`,
+		"bad scheme":          `{"server_url":"ftp://example.com"}`,
+		"no host":             `{"server_url":"https://"}`,
+		"bad auth method":     `{"server_url":"https://app.infisical.com","auth":{"method":"oidc"}}`,
+		"token without token": `{"server_url":"https://app.infisical.com","auth":{"method":"token"}}`,
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -63,6 +64,34 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 	}
 	if cfg.Auth.ClientID != "env-client-id" || cfg.Auth.ClientSecret != "env-secret" {
 		t.Errorf("credential override failed: %+v", cfg.Auth)
+	}
+}
+
+func TestLoadConfigTokenAuthFromConfig(t *testing.T) {
+	path := writeConfig(t, `{"server_url":"https://app.infisical.com","auth":{"method":"token","token":"jwt-abc"}}`)
+	cfg, err := loadConfigFrom(path, false)
+	if err != nil {
+		t.Fatalf("loadConfigFrom: %v", err)
+	}
+	if cfg.Auth.Method != AuthMethodToken || cfg.Auth.Token != "jwt-abc" {
+		t.Errorf("token auth not loaded: %+v", cfg.Auth)
+	}
+}
+
+func TestLoadConfigTokenEnvSelectsTokenAuth(t *testing.T) {
+	t.Setenv(EnvServerURL, "https://app.infisical.com")
+	t.Setenv(EnvToken, "jwt-from-env")
+
+	missing := filepath.Join(t.TempDir(), "none.json")
+	cfg, err := loadConfigFrom(missing, true)
+	if err != nil {
+		t.Fatalf("loadConfigFrom: %v", err)
+	}
+	if cfg.Auth.Method != AuthMethodToken {
+		t.Errorf("env token should select token auth, got method %q", cfg.Auth.Method)
+	}
+	if cfg.Auth.Token != "jwt-from-env" {
+		t.Errorf("token from env = %q", cfg.Auth.Token)
 	}
 }
 
