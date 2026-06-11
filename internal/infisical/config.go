@@ -4,6 +4,7 @@ package infisical
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -138,21 +139,30 @@ func ConfigPath() string {
 	return DefaultConfigPath()
 }
 
-// LoadConfig reads and validates the config file, then applies environment overrides.
+// LoadConfig reads and validates the config file, then applies environment overrides. When no
+// config path is set explicitly and the default file is absent, configuration falls back to
+// environment variables alone (INFISICAL_KSP_SERVER_URL plus the credential variables), so a
+// config file is optional.
 func LoadConfig() (*Config, error) {
-	return loadConfigFrom(ConfigPath())
+	allowMissing := os.Getenv(EnvConfigPath) == ""
+	return loadConfigFrom(ConfigPath(), allowMissing)
 }
 
-// loadConfigFrom reads config from an explicit path.
-func loadConfigFrom(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
-	}
-
+// loadConfigFrom reads config from an explicit path. When allowMissing is true, a non-existent
+// file is treated as an empty config so environment variables can supply everything.
+func loadConfigFrom(path string, allowMissing bool) (*Config, error) {
 	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+		}
+	case allowMissing && errors.Is(err, os.ErrNotExist):
+		// No config file at the default path: rely on environment variables.
+	default:
+		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
 	cfg.setDefaults()
