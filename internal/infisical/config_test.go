@@ -17,7 +17,7 @@ func writeConfig(t *testing.T, body string) string {
 
 func TestLoadConfigDefaults(t *testing.T) {
 	path := writeConfig(t, `{"server_url":"https://app.infisical.com"}`)
-	cfg, err := loadConfigFrom(path)
+	cfg, err := loadConfigFrom(path, false)
 	if err != nil {
 		t.Fatalf("loadConfigFrom: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestLoadConfigInvalid(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := loadConfigFrom(writeConfig(t, body)); err == nil {
+			if _, err := loadConfigFrom(writeConfig(t, body), false); err == nil {
 				t.Fatalf("expected error for %s, got nil", name)
 			}
 		})
@@ -54,7 +54,7 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 	t.Setenv(EnvClientSecret, "env-secret")
 
 	path := writeConfig(t, `{"server_url":"https://app.infisical.com"}`)
-	cfg, err := loadConfigFrom(path)
+	cfg, err := loadConfigFrom(path, false)
 	if err != nil {
 		t.Fatalf("loadConfigFrom: %v", err)
 	}
@@ -63,5 +63,28 @@ func TestLoadConfigEnvOverrides(t *testing.T) {
 	}
 	if cfg.Auth.ClientID != "env-client-id" || cfg.Auth.ClientSecret != "env-secret" {
 		t.Errorf("credential override failed: %+v", cfg.Auth)
+	}
+}
+
+func TestLoadConfigEnvOnlyNoFile(t *testing.T) {
+	t.Setenv(EnvServerURL, "https://app.infisical.com")
+	t.Setenv(EnvClientID, "env-client-id")
+	t.Setenv(EnvClientSecret, "env-secret")
+
+	missing := filepath.Join(t.TempDir(), "does-not-exist.json")
+	cfg, err := loadConfigFrom(missing, true)
+	if err != nil {
+		t.Fatalf("loadConfigFrom with missing file: %v", err)
+	}
+	if cfg.ServerURL != "https://app.infisical.com" {
+		t.Errorf("server_url from env = %q", cfg.ServerURL)
+	}
+	if cfg.Auth.ClientID != "env-client-id" || cfg.Auth.ClientSecret != "env-secret" {
+		t.Errorf("credentials from env failed: %+v", cfg.Auth)
+	}
+
+	// A missing file is still an error when the path was set explicitly.
+	if _, err := loadConfigFrom(missing, false); err == nil {
+		t.Fatal("expected error for missing file when allowMissing=false, got nil")
 	}
 }
